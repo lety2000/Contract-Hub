@@ -17,6 +17,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -235,6 +236,53 @@ export default function ContractFormScreen() {
     const newDocs = [...documents];
     newDocs.splice(index, 1);
     setDocuments(newDocs);
+  };
+
+  const handleDownloadDocument = (doc: Document) => {
+    const isWeb = Platform.OS === 'web';
+    
+    if (isWeb) {
+      // Web: Create download link
+      try {
+        const byteCharacters = atob(doc.content_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: doc.mime_type });
+        
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        Alert.alert('Fehler', 'Dokument konnte nicht heruntergeladen werden');
+      }
+    } else {
+      // Native: Save and share
+      const downloadNative = async () => {
+        try {
+          const fileUri = FileSystem.documentDirectory + doc.name;
+          await FileSystem.writeAsStringAsync(fileUri, doc.content_base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, { mimeType: doc.mime_type });
+          } else {
+            Alert.alert('Erfolg', 'Dokument wurde gespeichert');
+          }
+        } catch (error) {
+          Alert.alert('Fehler', 'Dokument konnte nicht heruntergeladen werden');
+        }
+      };
+      downloadNative();
+    }
   };
 
   const handleAddReminder = () => {
@@ -639,8 +687,17 @@ export default function ContractFormScreen() {
                 <Text style={styles.documentName} numberOfLines={1}>
                   {doc.name}
                 </Text>
-                <TouchableOpacity onPress={() => handleRemoveDocument(index)}>
-                  <Ionicons name="close-circle" size={24} color="#64748b" />
+                <TouchableOpacity 
+                  style={styles.documentButton}
+                  onPress={() => handleDownloadDocument(doc)}
+                >
+                  <Ionicons name="download-outline" size={22} color="#3b82f6" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.documentButton}
+                  onPress={() => handleRemoveDocument(index)}
+                >
+                  <Ionicons name="close-circle" size={22} color="#ef4444" />
                 </TouchableOpacity>
               </View>
             ))}
@@ -844,6 +901,9 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#fff',
     fontSize: 14,
+  },
+  documentButton: {
+    padding: 4,
   },
   reminderItem: {
     backgroundColor: '#1e293b',

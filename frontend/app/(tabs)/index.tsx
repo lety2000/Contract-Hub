@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   useWindowDimensions,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -26,6 +27,26 @@ interface Statistics {
       monthly_cost: number;
     };
   };
+}
+
+interface Reminder {
+  id: string;
+  title: string;
+  date: string;
+  description?: string;
+  contractName: string;
+  contractId: string;
+}
+
+interface Contract {
+  id: string;
+  name: string;
+  reminders: {
+    id: string;
+    title: string;
+    date: string;
+    description?: string;
+  }[];
 }
 
 const CATEGORY_ICONS: { [key: string]: keyof typeof Ionicons.glyphMap } = {
@@ -50,10 +71,37 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState<Statistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dueReminders, setDueReminders] = useState<Reminder[]>([]);
+  const [showRemindersModal, setShowRemindersModal] = useState(false);
   
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const isTablet = width >= 768 && width < 1024;
+
+  // Parse German date format (DD.MM.YYYY) to Date
+  const parseGermanDate = (dateStr: string): Date | null => {
+    if (!dateStr) return null;
+    // Handle ISO format
+    if (dateStr.includes('-')) {
+      return new Date(dateStr);
+    }
+    // Handle German format
+    const parts = dateStr.split('.');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+    return null;
+  };
+
+  // Format date to German
+  const formatDateGerman = (dateStr: string): string => {
+    const date = parseGermanDate(dateStr);
+    if (!date) return dateStr;
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+  };
 
   const fetchStats = async () => {
     try {
@@ -74,10 +122,65 @@ export default function DashboardScreen() {
     }
   };
 
+  const fetchReminders = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/contracts`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const contracts: Contract[] = await response.json();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Get reminders due today or earlier, or in the next 7 days
+        const upcoming: Reminder[] = [];
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        contracts.forEach((contract) => {
+          if (contract.reminders && contract.reminders.length > 0) {
+            contract.reminders.forEach((reminder) => {
+              const reminderDate = parseGermanDate(reminder.date);
+              if (reminderDate) {
+                reminderDate.setHours(0, 0, 0, 0);
+                if (reminderDate <= nextWeek) {
+                  upcoming.push({
+                    ...reminder,
+                    contractName: contract.name,
+                    contractId: contract.id,
+                  });
+                }
+              }
+            });
+          }
+        });
+        
+        // Sort by date
+        upcoming.sort((a, b) => {
+          const dateA = parseGermanDate(a.date);
+          const dateB = parseGermanDate(b.date);
+          return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
+        });
+        
+        setDueReminders(upcoming);
+        
+        // Show modal if there are due reminders
+        if (upcoming.length > 0) {
+          setShowRemindersModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch reminders:', error);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       if (token) {
         fetchStats();
+        fetchReminders();
       }
     }, [token])
   );
@@ -85,6 +188,7 @@ export default function DashboardScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchStats();
+    fetchReminders();
   };
 
   if (loading) {
@@ -241,6 +345,82 @@ export default function DashboardScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Reminders Modal */}
+      <Modal
+        visible={showRemindersModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRemindersModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isDesktop && styles.modalContentDesktop]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconWrapper}>
+                <Ionicons name="alarm" size={32} color="#f59e0b" />
+              </View>
+              <Text style={[styles.modalTitle, isDesktop && styles.modalTitleDesktop]}>
+                Anstehende Erinnerungen
+              </Text>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowRemindersModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.remindersList}>
+              {dueReminders.map((reminder, index) => {
+                const reminderDate = parseGermanDate(reminder.date);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isPast = reminderDate && reminderDate < today;
+                const isToday = reminderDate && reminderDate.getTime() === today.getTime();
+                
+                return (
+                  <TouchableOpacity
+                    key={`${reminder.contractId}-${index}`}
+                    style={[
+                      styles.reminderCard,
+                      isPast && styles.reminderCardPast,
+                      isToday && styles.reminderCardToday,
+                    ]}
+                    onPress={() => {
+                      setShowRemindersModal(false);
+                      router.push(`/contract/${reminder.contractId}`);
+                    }}
+                  >
+                    <View style={styles.reminderDateBadge}>
+                      <Text style={[
+                        styles.reminderDateText,
+                        isPast && styles.reminderDatePast,
+                        isToday && styles.reminderDateToday,
+                      ]}>
+                        {formatDateGerman(reminder.date)}
+                      </Text>
+                      {isPast && <Text style={styles.reminderOverdue}>Überfällig</Text>}
+                      {isToday && <Text style={styles.reminderTodayBadge}>Heute</Text>}
+                    </View>
+                    <Text style={styles.reminderTitle}>{reminder.title}</Text>
+                    <Text style={styles.reminderContract}>{reminder.contractName}</Text>
+                    {reminder.description && (
+                      <Text style={styles.reminderDescription}>{reminder.description}</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowRemindersModal(false)}
+            >
+              <Text style={styles.modalButtonText}>Verstanden</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -482,5 +662,131 @@ const styles = StyleSheet.create({
   },
   addButtonTextDesktop: {
     fontSize: 18,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+  },
+  modalContentDesktop: {
+    maxWidth: 600,
+    padding: 32,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  modalTitleDesktop: {
+    fontSize: 24,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    padding: 8,
+  },
+  remindersList: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  reminderCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+  },
+  reminderCardPast: {
+    borderLeftColor: '#ef4444',
+  },
+  reminderCardToday: {
+    borderLeftColor: '#f59e0b',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+  },
+  reminderDateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  reminderDateText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  reminderDatePast: {
+    color: '#ef4444',
+  },
+  reminderDateToday: {
+    color: '#f59e0b',
+  },
+  reminderOverdue: {
+    fontSize: 12,
+    color: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  reminderTodayBadge: {
+    fontSize: 12,
+    color: '#f59e0b',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  reminderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  reminderContract: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+  reminderDescription: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 8,
+  },
+  modalButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
