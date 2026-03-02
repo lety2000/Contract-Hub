@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 
 # Use the production URL from frontend/.env
-BACKEND_URL = "https://contract-hub-88.preview.emergentagent.com/api"
+BACKEND_URL = "https://vertrag-hub-1.preview.emergentagent.com/api"
 
 class VertragsmanagerAPITester:
     def __init__(self):

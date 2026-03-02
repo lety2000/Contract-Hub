@@ -1,0 +1,124 @@
+# ==============================================
+# VERTRAGSMANAGER - EINFACHE PORTAINER INSTALLATION
+# ==============================================
+# 
+# ANLEITUNG:
+# 1. Portainer öffnen → Stacks → Add Stack
+# 2. Name eingeben: vertragsmanager
+# 3. "Web editor" auswählen
+# 4. Diesen gesamten Inhalt einfügen
+# 5. Bei "Environment variables" die Werte anpassen (siehe unten)
+# 6. "Deploy the stack" klicken
+#
+# UMGEBUNGSVARIABLEN in Portainer setzen:
+# - JWT_SECRET: Ein langes, sicheres Passwort (mind. 32 Zeichen)
+# - SMTP_USER: Deine Gmail-Adresse
+# - SMTP_PASSWORD: Dein Gmail App-Passwort
+# - SMTP_FROM_EMAIL: Deine Gmail-Adresse
+#
+# ==============================================
+
+version: '3.8'
+
+services:
+  # ============================================
+  # MongoDB Datenbank
+  # ============================================
+  mongo:
+    image: mongo:7
+    container_name: vertragsmanager-db
+    restart: unless-stopped
+    volumes:
+      - vertragsmanager_data:/data/db
+    networks:
+      - vm-network
+
+  # ============================================
+  # Backend API
+  # ============================================
+  backend:
+    image: python:3.11-slim
+    container_name: vertragsmanager-api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - backend_code:/app
+    entrypoint: >
+      sh -c "
+        if [ ! -f /app/server.py ]; then
+          echo 'Downloading backend code...';
+          apt-get update && apt-get install -y curl;
+          curl -sL https://raw.githubusercontent.com/YOUR_REPO/main/backend/server.py -o /app/server.py;
+          curl -sL https://raw.githubusercontent.com/YOUR_REPO/main/backend/requirements.txt -o /app/requirements.txt;
+        fi;
+        pip install -q -r requirements.txt;
+        uvicorn server:app --host 0.0.0.0 --port 8001
+      "
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: vertragsmanager
+      JWT_SECRET: ${JWT_SECRET:-BITTE_AENDERN_mindestens_32_zeichen_lang}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Vertragsmanager}
+    depends_on:
+      - mongo
+    networks:
+      - vm-network
+
+  # ============================================
+  # Frontend + Reverse Proxy
+  # ============================================
+  frontend:
+    image: nginx:alpine
+    container_name: vertragsmanager-web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:80"
+    volumes:
+      - frontend_dist:/usr/share/nginx/html
+      - nginx_conf:/etc/nginx/conf.d
+    entrypoint: >
+      sh -c "
+        if [ ! -f /etc/nginx/conf.d/default.conf ]; then
+          echo 'Creating nginx config...';
+          cat > /etc/nginx/conf.d/default.conf << 'NGINX'
+      server {
+          listen 80;
+          root /usr/share/nginx/html;
+          index index.html;
+          
+          location / {
+              try_files $$uri $$uri/ /index.html;
+          }
+          
+          location /api/ {
+              proxy_pass http://backend:8001/api/;
+              proxy_http_version 1.1;
+              proxy_set_header Host $$host;
+              proxy_set_header X-Real-IP $$remote_addr;
+              proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+      }
+      NGINX
+        fi;
+        nginx -g 'daemon off;'
+      "
+    depends_on:
+      - backend
+    networks:
+      - vm-network
+
+volumes:
+  vertragsmanager_data:
+  backend_code:
+  frontend_dist:
+  nginx_conf:
+
+networks:
+  vm-network:
+    driver: bridge

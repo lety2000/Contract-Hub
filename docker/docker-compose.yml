@@ -1,0 +1,68 @@
+version: '3.8'
+
+# ============================================
+# VERTRAGSMANAGER - Docker Compose für Synology NAS
+# ============================================
+# Verwendung:
+# 1. Kopiere diesen Inhalt in Portainer unter Stacks → Add Stack
+# 2. Passe den JWT_SECRET in den Environment Variables an
+# 3. Deploy the stack
+# ============================================
+
+services:
+  # MongoDB Datenbank
+  mongo:
+    image: mongo:7
+    container_name: vertragsmanager-db
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - vertragsmanager-net
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API (Python/FastAPI)
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: vertragsmanager-backend
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=vertragsmanager
+      - JWT_SECRET=${JWT_SECRET:-bitte-unbedingt-aendern-32-zeichen-minimum}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - vertragsmanager-net
+    # Kein Port nach außen - nur über nginx/frontend erreichbar
+
+  # Frontend (Nginx + Web App)
+  # Das Frontend verwendet relative URLs (/api/...) und nginx leitet
+  # diese Anfragen automatisch an das Backend weiter
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: vertragsmanager-frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      - backend
+    networks:
+      - vertragsmanager-net
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  vertragsmanager-net:
+    driver: bridge

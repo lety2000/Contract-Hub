@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+// For Docker deployment: use relative URLs (empty string) when EXPO_PUBLIC_BACKEND_URL is not set
+// This allows the nginx proxy to forward /api requests to the backend
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 interface User {
   id: string;
