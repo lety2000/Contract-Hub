@@ -53,6 +53,37 @@ const INTERVALS = [
   { value: 'jährlich', label: 'Jährlich' },
 ];
 
+// Date format helpers - German format (TT.MM.JJJJ)
+const formatDateToGerman = (isoDate: string): string => {
+  if (!isoDate) return '';
+  // Handle both ISO (YYYY-MM-DD) and German (DD.MM.YYYY) formats
+  if (isoDate.includes('.')) return isoDate; // Already German format
+  const parts = isoDate.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  }
+  return isoDate;
+};
+
+const formatDateToISO = (germanDate: string): string => {
+  if (!germanDate) return '';
+  // Handle both formats
+  if (germanDate.includes('-')) return germanDate; // Already ISO format
+  const parts = germanDate.split('.');
+  if (parts.length === 3) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return germanDate;
+};
+
+const getTodayGerman = (): string => {
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, '0');
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const year = today.getFullYear();
+  return `${day}.${month}.${year}`;
+};
+
 export default function ContractFormScreen() {
   const { token } = useAuth();
   const router = useRouter();
@@ -117,8 +148,8 @@ export default function ContractFormScreen() {
         setFamilyMemberId(data.family_member_id || null);
         setCost(data.cost?.toString() || '');
         setCostInterval(data.cost_interval || 'monatlich');
-        setStartDate(data.start_date || '');
-        setEndDate(data.end_date || '');
+        setStartDate(formatDateToGerman(data.start_date) || '');
+        setEndDate(formatDateToGerman(data.end_date) || '');
         setCancellationPeriod(data.cancellation_period || '');
         setContractNumber(data.contract_number || '');
         setContactPerson(data.contact_person || '');
@@ -127,7 +158,12 @@ export default function ContractFormScreen() {
         setNotes(data.notes || '');
         setTags(data.tags?.join(', ') || '');
         setDocuments(data.documents || []);
-        setReminders(data.reminders || []);
+        // Convert reminder dates to German format
+        const remindersWithGermanDates = (data.reminders || []).map((r: Reminder) => ({
+          ...r,
+          date: formatDateToGerman(r.date),
+        }));
+        setReminders(remindersWithGermanDates);
       }
     } catch (error) {
       console.error('Failed to fetch contract:', error);
@@ -168,7 +204,7 @@ export default function ContractFormScreen() {
   };
 
   const handleAddReminder = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayGerman();
     setReminders([...reminders, {
       title: 'Erinnerung',
       date: today,
@@ -211,8 +247,8 @@ export default function ContractFormScreen() {
         family_member_id: familyMemberId,
         cost: parseFloat(cost),
         cost_interval: costInterval,
-        start_date: startDate || null,
-        end_date: endDate || null,
+        start_date: formatDateToISO(startDate) || null,
+        end_date: formatDateToISO(endDate) || null,
         cancellation_period: cancellationPeriod || null,
         contract_number: contractNumber || null,
         contact_person: contactPerson || null,
@@ -227,7 +263,7 @@ export default function ContractFormScreen() {
         })),
         reminders: reminders.map((r) => ({
           title: r.title,
-          date: r.date,
+          date: formatDateToISO(r.date),
           description: r.description || null,
         })),
       };
@@ -462,21 +498,21 @@ export default function ContractFormScreen() {
               placeholderTextColor="#64748b"
             />
 
-            <Text style={styles.label}>Startdatum (JJJJ-MM-TT)</Text>
+            <Text style={styles.label}>Startdatum (TT.MM.JJJJ)</Text>
             <TextInput
               style={styles.input}
               value={startDate}
               onChangeText={setStartDate}
-              placeholder="2024-01-01"
+              placeholder="01.01.2024"
               placeholderTextColor="#64748b"
             />
 
-            <Text style={styles.label}>Enddatum (JJJJ-MM-TT)</Text>
+            <Text style={styles.label}>Enddatum (TT.MM.JJJJ)</Text>
             <TextInput
               style={styles.input}
               value={endDate}
               onChangeText={setEndDate}
-              placeholder="2025-01-01"
+              placeholder="01.01.2025"
               placeholderTextColor="#64748b"
             />
 
@@ -612,7 +648,7 @@ export default function ContractFormScreen() {
                   style={styles.reminderInput}
                   value={reminder.date}
                   onChangeText={(v) => updateReminder(index, 'date', v)}
-                  placeholder="Datum (JJJJ-MM-TT)"
+                  placeholder="Datum (TT.MM.JJJJ)"
                   placeholderTextColor="#64748b"
                 />
                 <TextInput
