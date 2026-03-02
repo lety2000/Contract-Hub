@@ -158,15 +158,18 @@ backend:
 
   - task: "PDF Export"
     implemented: true
-    working: NA
+    working: true
     file: "server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: NA
         - agent: "main"
         - comment: "Implemented, needs testing"
+        - working: true
+        - agent: "testing"
+        - comment: "PDF EXPORT FULLY FUNCTIONAL - Returns valid PDF file with correct headers (Content-Type: application/pdf, Content-Disposition: attachment; filename=vertraege.pdf). Generated PDF contains contract data grouped by category with proper formatting using ReportLab."
 
   - task: "Excel Export"
     implemented: true
