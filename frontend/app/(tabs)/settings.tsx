@@ -7,8 +7,7 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
-  Linking,
-  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
@@ -21,6 +20,10 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 export default function SettingsScreen() {
   const { user, token, logout } = useAuth();
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+  const isTablet = width >= 768 && width < 1024;
 
   const handleExport = async (format: 'pdf' | 'excel') => {
     setExporting(format);
@@ -80,84 +83,114 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Einstellungen</Text>
+      <ScrollView 
+        contentContainerStyle={[
+          styles.content,
+          isDesktop && styles.contentDesktop,
+        ]}
+      >
+        <View style={[styles.contentWrapper, { maxWidth: isDesktop ? 800 : isTablet ? 600 : '100%' }]}>
+          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>Einstellungen</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Profil</Text>
-          <View style={styles.profileCard}>
-            <View style={styles.profileAvatar}>
-              <Ionicons name="person" size={32} color="#3b82f6" />
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{user?.username}</Text>
-              {user?.email && (
-                <Text style={styles.profileEmail}>{user.email}</Text>
-              )}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>Profil</Text>
+            <View style={[styles.profileCard, isDesktop && styles.profileCardDesktop]}>
+              <View style={[styles.profileAvatar, isDesktop && styles.profileAvatarDesktop]}>
+                <Ionicons name="person" size={isDesktop ? 40 : 32} color="#3b82f6" />
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={[styles.profileName, isDesktop && styles.profileNameDesktop]}>
+                  {user?.username}
+                </Text>
+                {user?.email && (
+                  <Text style={[styles.profileEmail, isDesktop && styles.profileEmailDesktop]}>
+                    {user.email}
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Export</Text>
-          
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleExport('pdf')}
-            disabled={exporting !== null}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: '#ef4444' }]}>
-              <Ionicons name="document" size={20} color="#fff" />
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>Export</Text>
+            
+            <View style={[styles.exportGrid, isDesktop && styles.exportGridDesktop]}>
+              <TouchableOpacity
+                style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+                onPress={() => handleExport('pdf')}
+                disabled={exporting !== null}
+              >
+                <View style={[styles.menuIcon, styles.pdfIcon, isDesktop && styles.menuIconDesktop]}>
+                  <Ionicons name="document" size={isDesktop ? 24 : 20} color="#fff" />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                    Als PDF exportieren
+                  </Text>
+                  <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                    Übersicht aller Verträge
+                  </Text>
+                </View>
+                {exporting === 'pdf' ? (
+                  <ActivityIndicator size="small" color="#3b82f6" />
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#64748b" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+                onPress={() => handleExport('excel')}
+                disabled={exporting !== null}
+              >
+                <View style={[styles.menuIcon, styles.excelIcon, isDesktop && styles.menuIconDesktop]}>
+                  <Ionicons name="grid" size={isDesktop ? 24 : 20} color="#fff" />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                    Als Excel exportieren
+                  </Text>
+                  <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                    Detaillierte Tabelle
+                  </Text>
+                </View>
+                {exporting === 'excel' ? (
+                  <ActivityIndicator size="small" color="#3b82f6" />
+                ) : (
+                  <Ionicons name="chevron-forward" size={20} color="#64748b" />
+                )}
+              </TouchableOpacity>
             </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Als PDF exportieren</Text>
-              <Text style={styles.menuSubtitle}>Übersicht aller Verträge</Text>
-            </View>
-            {exporting === 'pdf' ? (
-              <ActivityIndicator size="small" color="#3b82f6" />
-            ) : (
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>Konto</Text>
+            
+            <TouchableOpacity 
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]} 
+              onPress={handleLogout}
+            >
+              <View style={[styles.menuIcon, styles.logoutIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="log-out" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>Abmelden</Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  Von diesem Gerät abmelden
+                </Text>
+              </View>
               <Ionicons name="chevron-forward" size={20} color="#64748b" />
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleExport('excel')}
-            disabled={exporting !== null}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: '#10b981' }]}>
-              <Ionicons name="grid" size={20} color="#fff" />
-            </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Als Excel exportieren</Text>
-              <Text style={styles.menuSubtitle}>Detaillierte Tabelle</Text>
-            </View>
-            {exporting === 'excel' ? (
-              <ActivityIndicator size="small" color="#3b82f6" />
-            ) : (
-              <Ionicons name="chevron-forward" size={20} color="#64748b" />
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Konto</Text>
-          
-          <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-            <View style={[styles.menuIcon, { backgroundColor: '#64748b' }]}>
-              <Ionicons name="log-out" size={20} color="#fff" />
-            </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Abmelden</Text>
-              <Text style={styles.menuSubtitle}>Von diesem Gerät abmelden</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#64748b" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Vertragsmanager v1.0.0</Text>
-          <Text style={styles.footerSubtext}>Alle Verträge im Überblick</Text>
+          <View style={[styles.footer, isDesktop && styles.footerDesktop]}>
+            <Text style={[styles.footerText, isDesktop && styles.footerTextDesktop]}>
+              Vertragsmanager v1.0.0
+            </Text>
+            <Text style={[styles.footerSubtext, isDesktop && styles.footerSubtextDesktop]}>
+              Alle Verträge im Überblick
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -172,11 +205,22 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
   },
+  contentDesktop: {
+    alignItems: 'center',
+    padding: 32,
+  },
+  contentWrapper: {
+    width: '100%',
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 24,
+  },
+  titleDesktop: {
+    fontSize: 32,
+    marginBottom: 32,
   },
   section: {
     marginBottom: 24,
@@ -189,12 +233,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  sectionTitleDesktop: {
+    fontSize: 16,
+    marginBottom: 16,
+  },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 16,
+  },
+  profileCardDesktop: {
+    padding: 24,
+    borderRadius: 16,
   },
   profileAvatar: {
     width: 56,
@@ -204,6 +256,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  profileAvatarDesktop: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+  },
   profileInfo: {
     marginLeft: 16,
   },
@@ -212,10 +269,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  profileNameDesktop: {
+    fontSize: 22,
+  },
   profileEmail: {
     fontSize: 14,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  profileEmailDesktop: {
+    fontSize: 16,
+    marginTop: 4,
+  },
+  exportGrid: {
+    gap: 8,
+  },
+  exportGridDesktop: {
+    flexDirection: 'row',
+    gap: 16,
   },
   menuItem: {
     flexDirection: 'row',
@@ -225,12 +296,32 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 8,
   },
+  menuItemDesktop: {
+    flex: 1,
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 0,
+  },
   menuIcon: {
     width: 40,
     height: 40,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  menuIconDesktop: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+  },
+  pdfIcon: {
+    backgroundColor: '#ef4444',
+  },
+  excelIcon: {
+    backgroundColor: '#10b981',
+  },
+  logoutIcon: {
+    backgroundColor: '#64748b',
   },
   menuContent: {
     flex: 1,
@@ -241,22 +332,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#fff',
   },
+  menuTitleDesktop: {
+    fontSize: 18,
+  },
   menuSubtitle: {
     fontSize: 13,
     color: '#64748b',
     marginTop: 2,
   },
+  menuSubtitleDesktop: {
+    fontSize: 15,
+    marginTop: 4,
+  },
   footer: {
     alignItems: 'center',
     paddingVertical: 24,
+  },
+  footerDesktop: {
+    paddingVertical: 40,
   },
   footerText: {
     fontSize: 14,
     color: '#64748b',
   },
+  footerTextDesktop: {
+    fontSize: 16,
+  },
   footerSubtext: {
     fontSize: 12,
     color: '#475569',
     marginTop: 4,
+  },
+  footerSubtextDesktop: {
+    fontSize: 14,
   },
 });

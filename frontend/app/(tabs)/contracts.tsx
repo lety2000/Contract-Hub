@@ -8,6 +8,7 @@ import {
   RefreshControl,
   TextInput,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -60,6 +61,10 @@ export default function ContractsScreen() {
     params.category ? String(params.category) : 'Alle'
   );
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+  const isTablet = width >= 768 && width < 1024;
 
   const fetchData = async () => {
     try {
@@ -119,7 +124,7 @@ export default function ContractsScreen() {
 
   const renderContract = ({ item }: { item: Contract }) => (
     <TouchableOpacity
-      style={styles.contractCard}
+      style={[styles.contractCard, isDesktop && styles.contractCardDesktop]}
       onPress={() => router.push(`/contract/${item.id}`)}
     >
       <View
@@ -129,22 +134,32 @@ export default function ContractsScreen() {
         ]}
       />
       <View style={styles.contractInfo}>
-        <Text style={styles.contractName}>{item.name}</Text>
-        <Text style={styles.contractProvider}>{item.provider}</Text>
+        <Text style={[styles.contractName, isDesktop && styles.contractNameDesktop]}>
+          {item.name}
+        </Text>
+        <Text style={[styles.contractProvider, isDesktop && styles.contractProviderDesktop]}>
+          {item.provider}
+        </Text>
         <View style={styles.contractMeta}>
           <View style={styles.metaItem}>
-            <Ionicons name="person-outline" size={14} color="#64748b" />
-            <Text style={styles.metaText}>{getMemberName(item.family_member_id)}</Text>
+            <Ionicons name="person-outline" size={isDesktop ? 16 : 14} color="#64748b" />
+            <Text style={[styles.metaText, isDesktop && styles.metaTextDesktop]}>
+              {getMemberName(item.family_member_id)}
+            </Text>
           </View>
           <View style={styles.metaItem}>
-            <Ionicons name="pricetag-outline" size={14} color="#64748b" />
-            <Text style={styles.metaText}>{item.category}</Text>
+            <Ionicons name="pricetag-outline" size={isDesktop ? 16 : 14} color="#64748b" />
+            <Text style={[styles.metaText, isDesktop && styles.metaTextDesktop]}>
+              {item.category}
+            </Text>
           </View>
         </View>
       </View>
       <View style={styles.contractCost}>
-        <Text style={styles.costValue}>{item.cost.toFixed(2)} €</Text>
-        <Text style={styles.costInterval}>
+        <Text style={[styles.costValue, isDesktop && styles.costValueDesktop]}>
+          {item.cost.toFixed(2)} €
+        </Text>
+        <Text style={[styles.costInterval, isDesktop && styles.costIntervalDesktop]}>
           {item.cost_interval === 'monatlich' ? '/ Monat' :
            item.cost_interval === 'jährlich' ? '/ Jahr' : '/ Quartal'}
         </Text>
@@ -164,90 +179,103 @@ export default function ContractsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Verträge</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push('/contract/new')}
-        >
-          <Ionicons name="add" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Suchen..."
-          placeholderTextColor="#64748b"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color="#64748b" />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      <FlatList
-        horizontal
-        data={CATEGORIES}
-        keyExtractor={(item) => item}
-        renderItem={({ item }) => (
+      <View style={[styles.contentWrapper, { maxWidth: isDesktop ? 1200 : isTablet ? 800 : '100%' }]}>
+        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
+          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>Verträge</Text>
           <TouchableOpacity
-            style={[
-              styles.categoryChip,
-              selectedCategory === item && styles.categoryChipActive,
-            ]}
-            onPress={() => setSelectedCategory(item)}
+            style={[styles.addButton, isDesktop && styles.addButtonDesktop]}
+            onPress={() => router.push('/contract/new')}
           >
-            <Text
-              style={[
-                styles.categoryChipText,
-                selectedCategory === item && styles.categoryChipTextActive,
-              ]}
-            >
-              {item}
-            </Text>
+            <Ionicons name="add" size={isDesktop ? 28 : 24} color="#fff" />
+            {isDesktop && <Text style={styles.addButtonText}>Neuer Vertrag</Text>}
           </TouchableOpacity>
-        )}
-        style={styles.categoryFilter}
-        contentContainerStyle={styles.categoryFilterContent}
-        showsHorizontalScrollIndicator={false}
-      />
+        </View>
 
-      <FlatList
-        data={filteredContracts}
-        keyExtractor={(item) => item.id}
-        renderItem={renderContract}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#3b82f6"
+        <View style={[styles.searchContainer, isDesktop && styles.searchContainerDesktop]}>
+          <Ionicons name="search" size={20} color="#64748b" style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, isDesktop && styles.searchInputDesktop]}
+            placeholder="Suchen..."
+            placeholderTextColor="#64748b"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={48} color="#64748b" />
-            <Text style={styles.emptyText}>
-              {searchQuery || selectedCategory !== 'Alle'
-                ? 'Keine Verträge gefunden'
-                : 'Noch keine Verträge vorhanden'}
-            </Text>
-            {!searchQuery && selectedCategory === 'Alle' && (
-              <TouchableOpacity
-                style={styles.emptyButton}
-                onPress={() => router.push('/contract/new')}
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color="#64748b" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <FlatList
+          horizontal
+          data={CATEGORIES}
+          keyExtractor={(item) => item}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[
+                styles.categoryChip,
+                isDesktop && styles.categoryChipDesktop,
+                selectedCategory === item && styles.categoryChipActive,
+              ]}
+              onPress={() => setSelectedCategory(item)}
+            >
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  isDesktop && styles.categoryChipTextDesktop,
+                  selectedCategory === item && styles.categoryChipTextActive,
+                ]}
               >
-                <Text style={styles.emptyButtonText}>Ersten Vertrag anlegen</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        }
-      />
+                {item}
+              </Text>
+            </TouchableOpacity>
+          )}
+          style={styles.categoryFilter}
+          contentContainerStyle={[
+            styles.categoryFilterContent,
+            isDesktop && styles.categoryFilterContentDesktop,
+          ]}
+          showsHorizontalScrollIndicator={false}
+        />
+
+        <FlatList
+          data={filteredContracts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderContract}
+          numColumns={isDesktop ? 2 : 1}
+          key={isDesktop ? 'desktop' : 'mobile'}
+          columnWrapperStyle={isDesktop ? styles.columnWrapper : undefined}
+          contentContainerStyle={[styles.listContent, isDesktop && styles.listContentDesktop]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#3b82f6"
+            />
+          }
+          ListEmptyComponent={
+            <View style={[styles.emptyState, isDesktop && styles.emptyStateDesktop]}>
+              <Ionicons name="document-text-outline" size={isDesktop ? 64 : 48} color="#64748b" />
+              <Text style={[styles.emptyText, isDesktop && styles.emptyTextDesktop]}>
+                {searchQuery || selectedCategory !== 'Alle'
+                  ? 'Keine Verträge gefunden'
+                  : 'Noch keine Verträge vorhanden'}
+              </Text>
+              {!searchQuery && selectedCategory === 'Alle' && (
+                <TouchableOpacity
+                  style={[styles.emptyButton, isDesktop && styles.emptyButtonDesktop]}
+                  onPress={() => router.push('/contract/new')}
+                >
+                  <Text style={[styles.emptyButtonText, isDesktop && styles.emptyButtonTextDesktop]}>
+                    Ersten Vertrag anlegen
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -256,6 +284,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a',
+    alignItems: 'center',
+  },
+  contentWrapper: {
+    flex: 1,
+    width: '100%',
   },
   loadingContainer: {
     flex: 1,
@@ -269,10 +302,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
+  headerDesktop: {
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  titleDesktop: {
+    fontSize: 32,
   },
   addButton: {
     backgroundColor: '#3b82f6',
@@ -281,6 +321,19 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+    flexDirection: 'row',
+  },
+  addButtonDesktop: {
+    width: 'auto',
+    paddingHorizontal: 24,
+    height: 48,
+    borderRadius: 12,
+    gap: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -291,6 +344,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 12,
   },
+  searchContainerDesktop: {
+    marginHorizontal: 32,
+    marginBottom: 20,
+  },
   searchIcon: {
     marginRight: 8,
   },
@@ -300,6 +357,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
+  searchInputDesktop: {
+    height: 52,
+    fontSize: 18,
+  },
   categoryFilter: {
     maxHeight: 44,
     marginBottom: 8,
@@ -308,6 +369,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
   },
+  categoryFilterContentDesktop: {
+    paddingHorizontal: 32,
+  },
   categoryChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -315,12 +379,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     marginRight: 8,
   },
+  categoryChipDesktop: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
   categoryChipActive: {
     backgroundColor: '#3b82f6',
   },
   categoryChipText: {
     color: '#94a3b8',
     fontSize: 14,
+  },
+  categoryChipTextDesktop: {
+    fontSize: 16,
   },
   categoryChipTextActive: {
     color: '#fff',
@@ -330,12 +401,26 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 8,
   },
+  listContentDesktop: {
+    padding: 32,
+    paddingTop: 16,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    gap: 16,
+  },
   contractCard: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
+  },
+  contractCardDesktop: {
+    flex: 1,
+    maxWidth: 'calc(50% - 8px)',
+    marginBottom: 16,
+    borderRadius: 16,
   },
   categoryIndicator: {
     width: 4,
@@ -349,10 +434,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  contractNameDesktop: {
+    fontSize: 18,
+  },
   contractProvider: {
     fontSize: 14,
     color: '#94a3b8',
     marginTop: 2,
+  },
+  contractProviderDesktop: {
+    fontSize: 16,
+    marginTop: 4,
   },
   contractMeta: {
     flexDirection: 'row',
@@ -368,6 +460,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
   },
+  metaTextDesktop: {
+    fontSize: 14,
+  },
   contractCost: {
     justifyContent: 'center',
     alignItems: 'flex-end',
@@ -378,13 +473,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#10b981',
   },
+  costValueDesktop: {
+    fontSize: 20,
+  },
   costInterval: {
     fontSize: 12,
     color: '#64748b',
   },
+  costIntervalDesktop: {
+    fontSize: 14,
+  },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
+  },
+  emptyStateDesktop: {
+    paddingVertical: 100,
   },
   emptyText: {
     fontSize: 16,
@@ -392,14 +496,27 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 20,
   },
+  emptyTextDesktop: {
+    fontSize: 20,
+    marginTop: 20,
+    marginBottom: 28,
+  },
   emptyButton: {
     backgroundColor: '#3b82f6',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
+  emptyButtonDesktop: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
   emptyButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  emptyButtonTextDesktop: {
+    fontSize: 18,
   },
 });

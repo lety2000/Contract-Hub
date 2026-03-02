@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
@@ -25,6 +26,10 @@ export default function LoginScreen() {
 
   const { login, register } = useAuth();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  
+  const isDesktop = width >= 768;
+  const formMaxWidth = isDesktop ? 440 : '100%';
 
   const handleSubmit = async () => {
     if (!username || !password) {
@@ -58,91 +63,102 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
-          <Ionicons name="document-text" size={64} color="#3b82f6" />
-          <Text style={styles.title}>Vertragsmanager</Text>
-          <Text style={styles.subtitle}>
-            Alle Verträge im Überblick
-          </Text>
-        </View>
-
-        <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Benutzername"
-              placeholderTextColor="#64748b"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-            />
+        <View style={[styles.formWrapper, { maxWidth: formMaxWidth }]}>
+          <View style={styles.header}>
+            <View style={[styles.logoContainer, isDesktop && styles.logoContainerDesktop]}>
+              <Ionicons name="document-text" size={isDesktop ? 80 : 64} color="#3b82f6" />
+            </View>
+            <Text style={[styles.title, isDesktop && styles.titleDesktop]}>Vertragsmanager</Text>
+            <Text style={[styles.subtitle, isDesktop && styles.subtitleDesktop]}>
+              Alle Verträge im Überblick
+            </Text>
           </View>
 
-          {!isLogin && (
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.inputIcon} />
+          <View style={[styles.form, isDesktop && styles.formDesktop]}>
+            <View style={[styles.inputContainer, isDesktop && styles.inputContainerDesktop]}>
+              <Ionicons name="person-outline" size={20} color="#64748b" style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
-                placeholder="E-Mail (optional)"
+                style={[styles.input, isDesktop && styles.inputDesktop]}
+                placeholder="Benutzername"
                 placeholderTextColor="#64748b"
-                value={email}
-                onChangeText={setEmail}
+                value={username}
+                onChangeText={setUsername}
                 autoCapitalize="none"
-                keyboardType="email-address"
               />
             </View>
-          )}
 
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color="#64748b" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Passwort"
-              placeholderTextColor="#64748b"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeIcon}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color="#64748b"
+            {!isLogin && (
+              <View style={[styles.inputContainer, isDesktop && styles.inputContainerDesktop]}>
+                <Ionicons name="mail-outline" size={20} color="#64748b" style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, isDesktop && styles.inputDesktop]}
+                  placeholder="E-Mail (optional)"
+                  placeholderTextColor="#64748b"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+            )}
+
+            <View style={[styles.inputContainer, isDesktop && styles.inputContainerDesktop]}>
+              <Ionicons name="lock-closed-outline" size={20} color="#64748b" style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, isDesktop && styles.inputDesktop]}
+                placeholder="Passwort"
+                placeholderTextColor="#64748b"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#64748b"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.button,
+                isDesktop && styles.buttonDesktop,
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={[styles.buttonText, isDesktop && styles.buttonTextDesktop]}>
+                  {isLogin ? 'Anmelden' : 'Registrieren'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.switchButton}
+              onPress={() => setIsLogin(!isLogin)}
+            >
+              <Text style={[styles.switchText, isDesktop && styles.switchTextDesktop]}>
+                {isLogin
+                  ? 'Noch kein Konto? Registrieren'
+                  : 'Bereits ein Konto? Anmelden'}
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {isLogin ? 'Anmelden' : 'Registrieren'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => setIsLogin(!isLogin)}
-          >
-            <Text style={styles.switchText}>
-              {isLogin
-                ? 'Noch kein Konto? Registrieren'
-                : 'Bereits ein Konto? Anmelden'}
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -159,9 +175,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  scrollContentDesktop: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  formWrapper: {
+    width: '100%',
+  },
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 24,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainerDesktop: {
+    width: 120,
+    height: 120,
+    borderRadius: 28,
   },
   title: {
     fontSize: 28,
@@ -169,13 +205,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 16,
   },
+  titleDesktop: {
+    fontSize: 36,
+    marginTop: 24,
+  },
   subtitle: {
     fontSize: 16,
     color: '#94a3b8',
     marginTop: 8,
   },
+  subtitleDesktop: {
+    fontSize: 18,
+  },
   form: {
     width: '100%',
+  },
+  formDesktop: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 32,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -185,6 +233,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 16,
   },
+  inputContainerDesktop: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    marginBottom: 20,
+  },
   inputIcon: {
     marginRight: 12,
   },
@@ -193,6 +246,10 @@ const styles = StyleSheet.create({
     height: 52,
     color: '#fff',
     fontSize: 16,
+  },
+  inputDesktop: {
+    height: 56,
+    fontSize: 17,
   },
   eyeIcon: {
     padding: 8,
@@ -205,6 +262,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  buttonDesktop: {
+    height: 56,
+    marginTop: 16,
+    borderRadius: 14,
+  },
   buttonDisabled: {
     opacity: 0.7,
   },
@@ -213,6 +275,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  buttonTextDesktop: {
+    fontSize: 18,
+  },
   switchButton: {
     marginTop: 24,
     alignItems: 'center',
@@ -220,5 +285,8 @@ const styles = StyleSheet.create({
   switchText: {
     color: '#3b82f6',
     fontSize: 14,
+  },
+  switchTextDesktop: {
+    fontSize: 16,
   },
 });
