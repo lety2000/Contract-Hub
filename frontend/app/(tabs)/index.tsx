@@ -134,10 +134,8 @@ export default function DashboardScreen() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        // Get reminders due today or earlier, or in the next 7 days
-        const upcoming: Reminder[] = [];
-        const nextWeek = new Date(today);
-        nextWeek.setDate(nextWeek.getDate() + 7);
+        // Get reminders due TODAY only (for automatic popup)
+        const todaysReminders: Reminder[] = [];
         
         contracts.forEach((contract) => {
           if (contract.reminders && contract.reminders.length > 0) {
@@ -145,8 +143,9 @@ export default function DashboardScreen() {
               const reminderDate = parseGermanDate(reminder.date);
               if (reminderDate) {
                 reminderDate.setHours(0, 0, 0, 0);
-                if (reminderDate <= nextWeek) {
-                  upcoming.push({
+                // Only show reminders for TODAY
+                if (reminderDate.getTime() === today.getTime()) {
+                  todaysReminders.push({
                     ...reminder,
                     contractName: contract.name,
                     contractId: contract.id,
@@ -157,17 +156,10 @@ export default function DashboardScreen() {
           }
         });
         
-        // Sort by date
-        upcoming.sort((a, b) => {
-          const dateA = parseGermanDate(a.date);
-          const dateB = parseGermanDate(b.date);
-          return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
-        });
+        setDueReminders(todaysReminders);
         
-        setDueReminders(upcoming);
-        
-        // Show modal if there are due reminders
-        if (upcoming.length > 0) {
+        // Show modal only if there are reminders for TODAY
+        if (todaysReminders.length > 0) {
           setShowRemindersModal(true);
         }
       }
@@ -346,7 +338,7 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* Reminders Modal */}
+      {/* Reminders Modal - Shows only TODAY's reminders */}
       <Modal
         visible={showRemindersModal}
         transparent
@@ -360,7 +352,7 @@ export default function DashboardScreen() {
                 <Ionicons name="alarm" size={32} color="#f59e0b" />
               </View>
               <Text style={[styles.modalTitle, isDesktop && styles.modalTitleDesktop]}>
-                Anstehende Erinnerungen
+                Erinnerungen für heute
               </Text>
               <TouchableOpacity
                 style={styles.modalCloseBtn}
@@ -371,45 +363,22 @@ export default function DashboardScreen() {
             </View>
 
             <ScrollView style={styles.remindersList}>
-              {dueReminders.map((reminder, index) => {
-                const reminderDate = parseGermanDate(reminder.date);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const isPast = reminderDate && reminderDate < today;
-                const isToday = reminderDate && reminderDate.getTime() === today.getTime();
-                
-                return (
-                  <TouchableOpacity
-                    key={`${reminder.contractId}-${index}`}
-                    style={[
-                      styles.reminderCard,
-                      isPast && styles.reminderCardPast,
-                      isToday && styles.reminderCardToday,
-                    ]}
-                    onPress={() => {
-                      setShowRemindersModal(false);
-                      router.push(`/contract/${reminder.contractId}`);
-                    }}
-                  >
-                    <View style={styles.reminderDateBadge}>
-                      <Text style={[
-                        styles.reminderDateText,
-                        isPast && styles.reminderDatePast,
-                        isToday && styles.reminderDateToday,
-                      ]}>
-                        {formatDateGerman(reminder.date)}
-                      </Text>
-                      {isPast && <Text style={styles.reminderOverdue}>Überfällig</Text>}
-                      {isToday && <Text style={styles.reminderTodayBadge}>Heute</Text>}
-                    </View>
-                    <Text style={styles.reminderTitle}>{reminder.title}</Text>
-                    <Text style={styles.reminderContract}>{reminder.contractName}</Text>
-                    {reminder.description && (
-                      <Text style={styles.reminderDescription}>{reminder.description}</Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+              {dueReminders.map((reminder, index) => (
+                <TouchableOpacity
+                  key={`${reminder.contractId}-${index}`}
+                  style={[styles.reminderCard, styles.reminderCardToday]}
+                  onPress={() => {
+                    setShowRemindersModal(false);
+                    router.push(`/contract/${reminder.contractId}`);
+                  }}
+                >
+                  <Text style={styles.reminderTitle}>{reminder.title}</Text>
+                  <Text style={styles.reminderContract}>{reminder.contractName}</Text>
+                  {reminder.description && (
+                    <Text style={styles.reminderDescription}>{reminder.description}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
             </ScrollView>
 
             <TouchableOpacity

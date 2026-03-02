@@ -16,6 +16,7 @@ import bcrypt
 import base64
 import io
 import smtplib
+import asyncio
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from openpyxl import Workbook
@@ -26,6 +27,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1132,6 +1135,157 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== SCHEDULER FOR AUTOMATIC REMINDERS ====================
+
+scheduler = AsyncIOScheduler()
+
+async def send_daily_reminders():
+    """Send reminder emails only for reminders due TODAY"""
+    logger.info("Checking for reminders due today...")
+    
+    try:
+        # Get all users with email
+        users = await db.users.find({"email": {"$exists": True, "$ne": None, "$ne": ""}}).to_list(1000)
+        
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        for user_data in users:
+            user_id = user_data.get("id")
+            user_email = user_data.get("email")
+            username = user_data.get("username", "Benutzer")
+            
+            if not user_email:
+                continue
+            
+            # Check if user has auto-reminders enabled (default: True)
+            settings = await db.user_settings.find_one({"user_id": user_id})
+            if settings and settings.get("auto_reminders") == False:
+                continue
+            
+            # Get SMTP settings for user
+            smtp_settings = await db.smtp_settings.find_one({"user_id": user_id})
+            if smtp_settings and smtp_settings.get("smtp_user"):
+                email_settings = {
+                    "smtp_host": smtp_settings.get("smtp_host", SMTP_HOST),
+                    "smtp_port": smtp_settings.get("smtp_port", SMTP_PORT),
+                    "smtp_user": smtp_settings.get("smtp_user", ""),
+                    "smtp_password": smtp_settings.get("smtp_password", ""),
+                    "smtp_from_email": smtp_settings.get("smtp_from_email", ""),
+                    "smtp_from_name": smtp_settings.get("smtp_from_name", SMTP_FROM_NAME),
+                }
+            else:
+                # Use default settings
+                email_settings = {
+                    "smtp_host": SMTP_HOST,
+                    "smtp_port": SMTP_PORT,
+                    "smtp_user": SMTP_USER,
+                    "smtp_password": SMTP_PASSWORD,
+                    "smtp_from_email": SMTP_FROM_EMAIL,
+                    "smtp_from_name": SMTP_FROM_NAME,
+                }
+            
+            if not email_settings.get("smtp_user") or not email_settings.get("smtp_password"):
+                continue
+            
+            # Get contracts for user
+            contracts = await db.contracts.find({"user_id": user_id}).to_list(1000)
+            
+            # Find reminders due TODAY only
+            todays_reminders = []
+            
+            for contract in contracts:
+                for reminder in contract.get("reminders", []):
+                    reminder_date = parse_date(reminder.get("date", ""))
+                    if not reminder_date:
+                        continue
+                    
+                    reminder_date = reminder_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    
+                    # Only include reminders for TODAY
+                    if reminder_date == today:
+                        todays_reminders.append({
+                            "title": reminder.get("title"),
+                            "date_formatted": format_date_german(reminder.get("date")),
+                            "description": reminder.get("description", ""),
+                            "contract_name": contract.get("name"),
+                            "contract_provider": contract.get("provider", ""),
+                            "is_overdue": False,
+                            "is_today": True
+                        })
+            
+            if not todays_reminders:
+                continue
+            
+            # Create email for today's reminders
+            html_content = create_today_reminder_email_html(todays_reminders, username)
+            subject = f"🔔 Erinnerung heute: {todays_reminders[0]['title']}" if len(todays_reminders) == 1 else f"🔔 {len(todays_reminders)} Erinnerungen für heute"
+            
+            success = send_email_with_settings(email_settings, user_email, subject, html_content)
+            if success:
+                logger.info(f"Reminder email sent to {user_email} for {len(todays_reminders)} reminder(s) due today")
+            else:
+                logger.warning(f"Failed to send reminder email to {user_email}")
+                
+    except Exception as e:
+        logger.error(f"Daily reminder job failed: {e}")
+
+def create_today_reminder_email_html(reminders: list, username: str) -> str:
+    """Create HTML content for today's reminder email"""
+    reminder_rows = ""
+    for r in reminders:
+        description = f"<p style='color: #94a3b8; margin: 8px 0 0 0;'>{r.get('description', '')}</p>" if r.get('description') else ""
+        
+        reminder_rows += f"""
+        <div style="background-color: #0f172a; border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 4px solid #f59e0b;">
+            <h3 style="color: #f8fafc; margin: 0 0 8px 0;">{r.get('title', 'Erinnerung')}</h3>
+            <p style="color: #3b82f6; margin: 0; font-weight: 500;">📋 {r.get('contract_name', '')} {(' - ' + r.get('contract_provider', '')) if r.get('contract_provider') else ''}</p>
+            {description}
+        </div>
+        """
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+    </head>
+    <body style="background-color: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; padding: 20px; margin: 0;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 12px; padding: 24px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #f59e0b; margin: 0;">🔔 Erinnerung</h1>
+                <p style="color: #94a3b8; margin: 8px 0 0 0;">Hallo {username}, heute ist Stichtag!</p>
+            </div>
+            
+            <p style="color: #f8fafc; font-size: 16px;">
+                Du hast {len(reminders)} Erinnerung{"en" if len(reminders) > 1 else ""} für heute ({datetime.now().strftime('%d.%m.%Y')}):
+            </p>
+            
+            {reminder_rows}
+            
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #334155;">
+                <p style="color: #64748b; font-size: 12px; margin: 0; text-align: center;">
+                    Diese E-Mail wurde automatisch vom Vertragsmanager gesendet.
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+@app.on_event("startup")
+async def startup_event():
+    # Schedule daily reminder check at 8:00 AM
+    scheduler.add_job(
+        send_daily_reminders,
+        CronTrigger(hour=8, minute=0),
+        id="daily_reminders",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info("Scheduler started - Daily reminder check scheduled for 8:00 AM")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    scheduler.shutdown()
     client.close()
