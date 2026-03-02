@@ -12,6 +12,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
@@ -22,9 +23,11 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function SettingsScreen() {
   const { user, token, logout } = useAuth();
+  const router = useRouter();
   const [exporting, setExporting] = useState<'pdf' | 'excel' | 'backup' | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreModalVisible, setRestoreModalVisible] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
@@ -239,6 +242,54 @@ export default function SettingsScreen() {
     setRestoreModalVisible(true);
   };
 
+  const handleSendReminderEmail = async () => {
+    setSendingEmail(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/reminders/send-email`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.sent) {
+          Alert.alert('Erfolg', data.message);
+        } else {
+          Alert.alert('Info', data.message);
+        }
+      } else {
+        throw new Error(data.detail || 'Fehler beim Senden');
+      }
+    } catch (error: any) {
+      Alert.alert('Fehler', error.message);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    setSendingEmail(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/reminders/test-email`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Erfolg', data.message);
+      } else {
+        throw new Error(data.detail || 'Test fehlgeschlagen');
+      }
+    } catch (error: any) {
+      Alert.alert('Fehler', error.message);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Abmelden',
@@ -385,6 +436,77 @@ export default function SettingsScreen() {
               ) : (
                 <Ionicons name="push-outline" size={20} color="#64748b" />
               )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              E-Mail Erinnerungen
+            </Text>
+            
+            <TouchableOpacity
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+              onPress={handleSendReminderEmail}
+              disabled={sendingEmail}
+            >
+              <View style={[styles.menuIcon, styles.emailIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="mail" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                  Erinnerungen jetzt senden
+                </Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  Sende E-Mail mit anstehenden Erinnerungen
+                </Text>
+              </View>
+              {sendingEmail ? (
+                <ActivityIndicator size="small" color="#3b82f6" />
+              ) : (
+                <Ionicons name="send-outline" size={20} color="#64748b" />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+              onPress={handleTestEmail}
+              disabled={sendingEmail}
+            >
+              <View style={[styles.menuIcon, styles.testEmailIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="checkmark-circle" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                  Test-E-Mail senden
+                </Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  Prüfe ob E-Mails ankommen
+                </Text>
+              </View>
+              {sendingEmail ? (
+                <ActivityIndicator size="small" color="#3b82f6" />
+              ) : (
+                <Ionicons name="flask-outline" size={20} color="#64748b" />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+              onPress={() => router.push('/email-settings')}
+              disabled={sendingEmail}
+            >
+              <View style={[styles.menuIcon, styles.settingsIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="settings" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                  SMTP-Einstellungen
+                </Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  E-Mail-Server konfigurieren
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#64748b" />
             </TouchableOpacity>
           </View>
 
@@ -586,6 +708,15 @@ const styles = StyleSheet.create({
   },
   restoreIcon: {
     backgroundColor: '#8b5cf6',
+  },
+  emailIcon: {
+    backgroundColor: '#f59e0b',
+  },
+  testEmailIcon: {
+    backgroundColor: '#10b981',
+  },
+  settingsIcon: {
+    backgroundColor: '#6366f1',
   },
   logoutIcon: {
     backgroundColor: '#64748b',

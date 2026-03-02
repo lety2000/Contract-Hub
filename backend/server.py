@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -15,6 +15,9 @@ import jwt
 import bcrypt
 import base64
 import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from openpyxl import Workbook
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -36,6 +39,14 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ.get('JWT_SECRET', 'vertragsmanager-secret-key-2024')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
+
+# SMTP Settings
+SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+SMTP_USER = os.environ.get('SMTP_USER', '')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+SMTP_FROM_EMAIL = os.environ.get('SMTP_FROM_EMAIL', '')
+SMTP_FROM_NAME = os.environ.get('SMTP_FROM_NAME', 'Vertragsmanager')
 
 # Create the main app
 app = FastAPI(title="Vertragsmanager API")
@@ -163,6 +174,23 @@ class ContractUpdate(BaseModel):
     tags: Optional[List[str]] = None
     documents: Optional[List[DocumentCreate]] = None
     reminders: Optional[List[ReminderCreate]] = None
+
+# Email Settings Model (stored per user)
+class SmtpSettings(BaseModel):
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "Vertragsmanager"
+
+class SmtpSettingsUpdate(BaseModel):
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: Optional[str] = None
 
 # ==================== AUTH HELPERS ====================
 
@@ -743,6 +771,355 @@ async def restore_backup(
     except Exception as e:
         logger.error(f"Backup restore failed: {e}")
         raise HTTPException(status_code=500, detail=f"Wiederherstellung fehlgeschlagen: {str(e)}")
+
+# ==================== EMAIL FUNCTIONS ====================
+
+def parse_date(date_str: str) -> datetime:
+    """Parse date from ISO or German format"""
+    if not date_str:
+        return None
+    # Try ISO format first (YYYY-MM-DD)
+    if '-' in date_str:
+        try:
+            return datetime.strptime(date_str.split('T')[0], '%Y-%m-%d')
+        except:
+            pass
+    # Try German format (DD.MM.YYYY)
+    if '.' in date_str:
+        try:
+            return datetime.strptime(date_str, '%d.%m.%Y')
+        except:
+            pass
+    return None
+
+def format_date_german(date_str: str) -> str:
+    """Convert date to German format"""
+    dt = parse_date(date_str)
+    if dt:
+        return dt.strftime('%d.%m.%Y')
+    return date_str
+
+async def get_user_smtp_settings(user_id: str) -> dict:
+    """Get SMTP settings for a user (from DB or fallback to env)"""
+    settings = await db.smtp_settings.find_one({"user_id": user_id})
+    if settings and settings.get("smtp_user"):
+        return {
+            "smtp_host": settings.get("smtp_host", SMTP_HOST),
+            "smtp_port": settings.get("smtp_port", SMTP_PORT),
+            "smtp_user": settings.get("smtp_user", ""),
+            "smtp_password": settings.get("smtp_password", ""),
+            "smtp_from_email": settings.get("smtp_from_email", ""),
+            "smtp_from_name": settings.get("smtp_from_name", SMTP_FROM_NAME),
+        }
+    # Fallback to environment variables
+    return {
+        "smtp_host": SMTP_HOST,
+        "smtp_port": SMTP_PORT,
+        "smtp_user": SMTP_USER,
+        "smtp_password": SMTP_PASSWORD,
+        "smtp_from_email": SMTP_FROM_EMAIL,
+        "smtp_from_name": SMTP_FROM_NAME,
+    }
+
+def send_email_with_settings(smtp_settings: dict, to_email: str, subject: str, html_content: str) -> bool:
+    """Send email via SMTP with custom settings"""
+    if not smtp_settings.get("smtp_user") or not smtp_settings.get("smtp_password"):
+        logger.warning("SMTP credentials not configured")
+        return False
+    
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = f"{smtp_settings.get('smtp_from_name', 'Vertragsmanager')} <{smtp_settings.get('smtp_from_email', smtp_settings.get('smtp_user'))}>"
+        msg['To'] = to_email
+        
+        html_part = MIMEText(html_content, 'html', 'utf-8')
+        msg.attach(html_part)
+        
+        with smtplib.SMTP(smtp_settings.get("smtp_host", "smtp.gmail.com"), smtp_settings.get("smtp_port", 587)) as server:
+            server.starttls()
+            server.login(smtp_settings.get("smtp_user"), smtp_settings.get("smtp_password"))
+            server.sendmail(smtp_settings.get("smtp_from_email", smtp_settings.get("smtp_user")), to_email, msg.as_string())
+        
+        logger.info(f"Email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        return False
+
+def send_email(to_email: str, subject: str, html_content: str) -> bool:
+    """Send email via SMTP (legacy function using env vars)"""
+    settings = {
+        "smtp_host": SMTP_HOST,
+        "smtp_port": SMTP_PORT,
+        "smtp_user": SMTP_USER,
+        "smtp_password": SMTP_PASSWORD,
+        "smtp_from_email": SMTP_FROM_EMAIL,
+        "smtp_from_name": SMTP_FROM_NAME,
+    }
+    return send_email_with_settings(settings, to_email, subject, html_content)
+
+def create_reminder_email_html(reminders: list, username: str) -> str:
+    """Create HTML content for reminder email"""
+    reminder_rows = ""
+    for r in reminders:
+        status_color = "#ef4444" if r.get('is_overdue') else "#f59e0b" if r.get('is_today') else "#3b82f6"
+        status_text = "Überfällig" if r.get('is_overdue') else "Heute" if r.get('is_today') else "Anstehend"
+        
+        reminder_rows += f"""
+        <tr>
+            <td style="padding: 12px; border-bottom: 1px solid #334155;">
+                <span style="background-color: {status_color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{status_text}</span>
+                <br/>
+                <strong style="color: #f8fafc;">{r.get('date_formatted', '')}</strong>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #334155;">
+                <strong style="color: #f8fafc;">{r.get('title', '')}</strong>
+                <br/>
+                <span style="color: #94a3b8;">{r.get('contract_name', '')}</span>
+            </td>
+        </tr>
+        """
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+    </head>
+    <body style="background-color: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 12px; padding: 24px;">
+            <h1 style="color: #3b82f6; margin-bottom: 8px;">📋 Vertragsmanager</h1>
+            <h2 style="color: #f8fafc; margin-top: 0;">Erinnerungen für {username}</h2>
+            
+            <p style="color: #94a3b8;">Du hast {len(reminders)} anstehende Erinnerung(en):</p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <thead>
+                    <tr style="background-color: #334155;">
+                        <th style="padding: 12px; text-align: left; color: #94a3b8;">Datum</th>
+                        <th style="padding: 12px; text-align: left; color: #94a3b8;">Erinnerung</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {reminder_rows}
+                </tbody>
+            </table>
+            
+            <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+                Diese E-Mail wurde automatisch vom Vertragsmanager gesendet.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+# ==================== EMAIL REMINDER ROUTES ====================
+
+class EmailSettings(BaseModel):
+    reminder_email: Optional[str] = None
+    send_daily_reminders: bool = True
+
+@api_router.get("/reminders/check")
+async def check_reminders(current_user: User = Depends(get_current_user)):
+    """Check for due reminders and return them"""
+    contracts = await db.contracts.find({"user_id": current_user.id}).to_list(1000)
+    
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    next_week = today + timedelta(days=7)
+    
+    due_reminders = []
+    
+    for contract in contracts:
+        if not contract.get("reminders"):
+            continue
+            
+        for reminder in contract.get("reminders", []):
+            reminder_date = parse_date(reminder.get("date", ""))
+            if not reminder_date:
+                continue
+            
+            reminder_date = reminder_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            if reminder_date <= next_week:
+                due_reminders.append({
+                    "id": reminder.get("id"),
+                    "title": reminder.get("title"),
+                    "date": reminder.get("date"),
+                    "date_formatted": format_date_german(reminder.get("date")),
+                    "description": reminder.get("description"),
+                    "contract_id": contract.get("id"),
+                    "contract_name": contract.get("name"),
+                    "is_overdue": reminder_date < today,
+                    "is_today": reminder_date == today
+                })
+    
+    # Sort by date
+    due_reminders.sort(key=lambda x: parse_date(x["date"]) or datetime.max)
+    
+    return {
+        "reminders": due_reminders,
+        "count": len(due_reminders)
+    }
+
+@api_router.post("/reminders/send-email")
+async def send_reminder_email(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    """Send reminder email to user"""
+    # Get user's email
+    user_data = await db.users.find_one({"id": current_user.id})
+    user_email = user_data.get("email") if user_data else None
+    
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse hinterlegt. Bitte in den Einstellungen hinzufügen.")
+    
+    # Get SMTP settings for user
+    smtp_settings = await get_user_smtp_settings(current_user.id)
+    
+    # Get due reminders
+    contracts = await db.contracts.find({"user_id": current_user.id}).to_list(1000)
+    
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    next_week = today + timedelta(days=7)
+    
+    due_reminders = []
+    
+    for contract in contracts:
+        for reminder in contract.get("reminders", []):
+            reminder_date = parse_date(reminder.get("date", ""))
+            if not reminder_date:
+                continue
+            
+            reminder_date = reminder_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            if reminder_date <= next_week:
+                due_reminders.append({
+                    "title": reminder.get("title"),
+                    "date_formatted": format_date_german(reminder.get("date")),
+                    "contract_name": contract.get("name"),
+                    "is_overdue": reminder_date < today,
+                    "is_today": reminder_date == today
+                })
+    
+    if not due_reminders:
+        return {"message": "Keine anstehenden Erinnerungen", "sent": False}
+    
+    # Sort by date
+    due_reminders.sort(key=lambda x: x.get("is_overdue", False), reverse=True)
+    
+    # Create and send email
+    html_content = create_reminder_email_html(due_reminders, current_user.username)
+    subject = f"🔔 {len(due_reminders)} Vertragserinnerung(en) - Vertragsmanager"
+    
+    success = send_email_with_settings(smtp_settings, user_email, subject, html_content)
+    
+    if success:
+        return {
+            "message": f"E-Mail mit {len(due_reminders)} Erinnerung(en) an {user_email} gesendet",
+            "sent": True,
+            "reminder_count": len(due_reminders)
+        }
+    else:
+        raise HTTPException(status_code=500, detail="E-Mail konnte nicht gesendet werden. Bitte SMTP-Einstellungen prüfen.")
+
+@api_router.post("/reminders/test-email")
+async def test_email(current_user: User = Depends(get_current_user)):
+    """Send a test email to verify configuration"""
+    user_data = await db.users.find_one({"id": current_user.id})
+    user_email = user_data.get("email") if user_data else None
+    
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse hinterlegt")
+    
+    # Get SMTP settings for user
+    smtp_settings = await get_user_smtp_settings(current_user.id)
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <body style="background-color: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 12px; padding: 24px;">
+            <h1 style="color: #3b82f6;">✅ Test erfolgreich!</h1>
+            <p style="color: #f8fafc;">Hallo {current_user.username},</p>
+            <p style="color: #94a3b8;">
+                Diese Test-E-Mail bestätigt, dass deine E-Mail-Einstellungen korrekt konfiguriert sind.
+                Du wirst ab jetzt Erinnerungen per E-Mail erhalten.
+            </p>
+            <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+                Vertragsmanager - Alle Verträge im Überblick
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    success = send_email_with_settings(smtp_settings, user_email, "✅ Vertragsmanager - Test-E-Mail", html_content)
+    
+    if success:
+        return {"message": f"Test-E-Mail an {user_email} gesendet", "success": True}
+    else:
+        raise HTTPException(status_code=500, detail="E-Mail konnte nicht gesendet werden. Bitte SMTP-Einstellungen prüfen.")
+
+# ==================== SMTP SETTINGS ROUTES ====================
+
+@api_router.get("/settings/smtp")
+async def get_smtp_settings(current_user: User = Depends(get_current_user)):
+    """Get SMTP settings for current user"""
+    settings = await db.smtp_settings.find_one({"user_id": current_user.id})
+    if settings:
+        # Don't return the password in full
+        return {
+            "smtp_host": settings.get("smtp_host", "smtp.gmail.com"),
+            "smtp_port": settings.get("smtp_port", 587),
+            "smtp_user": settings.get("smtp_user", ""),
+            "smtp_password_set": bool(settings.get("smtp_password")),
+            "smtp_from_email": settings.get("smtp_from_email", ""),
+            "smtp_from_name": settings.get("smtp_from_name", "Vertragsmanager"),
+        }
+    # Return defaults (check if env vars are set)
+    return {
+        "smtp_host": SMTP_HOST,
+        "smtp_port": SMTP_PORT,
+        "smtp_user": SMTP_USER,
+        "smtp_password_set": bool(SMTP_PASSWORD),
+        "smtp_from_email": SMTP_FROM_EMAIL,
+        "smtp_from_name": SMTP_FROM_NAME,
+    }
+
+@api_router.put("/settings/smtp")
+async def update_smtp_settings(
+    settings: SmtpSettingsUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Update SMTP settings for current user"""
+    existing = await db.smtp_settings.find_one({"user_id": current_user.id})
+    
+    update_data = {k: v for k, v in settings.dict().items() if v is not None}
+    update_data["user_id"] = current_user.id
+    update_data["updated_at"] = datetime.utcnow()
+    
+    if existing:
+        # If password not provided, keep the old one
+        if "smtp_password" not in update_data or not update_data.get("smtp_password"):
+            update_data["smtp_password"] = existing.get("smtp_password", "")
+        
+        await db.smtp_settings.update_one(
+            {"user_id": current_user.id},
+            {"$set": update_data}
+        )
+    else:
+        await db.smtp_settings.insert_one(update_data)
+    
+    return {"message": "SMTP-Einstellungen gespeichert", "success": True}
+
+@api_router.delete("/settings/smtp")
+async def delete_smtp_settings(current_user: User = Depends(get_current_user)):
+    """Delete custom SMTP settings (will use env defaults)"""
+    await db.smtp_settings.delete_one({"user_id": current_user.id})
+    return {"message": "SMTP-Einstellungen zurückgesetzt", "success": True}
 
 # Include the router in the main app
 app.include_router(api_router)
