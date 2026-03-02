@@ -174,26 +174,60 @@ export default function ContractFormScreen() {
   };
 
   const handlePickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const file = result.assets[0];
-        const content = await FileSystem.readAsStringAsync(file.uri, {
-          encoding: FileSystem.EncodingType.Base64,
+    const isWeb = Platform.OS === 'web';
+    
+    if (isWeb) {
+      // Web: Use native file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pdf,application/pdf';
+      
+      input.onchange = async (e: any) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result as string;
+            const base64 = base64data.split(',')[1];
+            
+            setDocuments([...documents, {
+              name: file.name,
+              content_base64: base64,
+              mime_type: 'application/pdf',
+            }]);
+          };
+          reader.readAsDataURL(file);
+        } catch (error) {
+          Alert.alert('Fehler', 'Dokument konnte nicht geladen werden');
+        }
+      };
+      
+      input.click();
+    } else {
+      // Native: Use DocumentPicker
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/pdf',
+          copyToCacheDirectory: true,
         });
 
-        setDocuments([...documents, {
-          name: file.name,
-          content_base64: content,
-          mime_type: 'application/pdf',
-        }]);
+        if (!result.canceled && result.assets[0]) {
+          const file = result.assets[0];
+          const content = await FileSystem.readAsStringAsync(file.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          setDocuments([...documents, {
+            name: file.name,
+            content_base64: content,
+            mime_type: 'application/pdf',
+          }]);
+        }
+      } catch (error) {
+        Alert.alert('Fehler', 'Dokument konnte nicht geladen werden');
       }
-    } catch (error) {
-      Alert.alert('Fehler', 'Dokument konnte nicht geladen werden');
     }
   };
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,28 +8,49 @@ import {
   ScrollView,
   ActivityIndicator,
   useWindowDimensions,
+  Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function SettingsScreen() {
   const { user, token, logout } = useAuth();
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | 'backup' | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreModalVisible, setRestoreModalVisible] = useState(false);
 
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const isTablet = width >= 768 && width < 1024;
+  const isWeb = Platform.OS === 'web';
+
+  // Web-specific download function
+  const downloadFileWeb = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
 
   const handleExport = async (format: 'pdf' | 'excel') => {
     setExporting(format);
     try {
       const endpoint = format === 'pdf' ? '/api/export/pdf' : '/api/export/excel';
       const filename = format === 'pdf' ? 'vertraege.pdf' : 'vertraege.xlsx';
+      const mimeType = format === 'pdf' 
+        ? 'application/pdf' 
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -41,29 +62,181 @@ export default function SettingsScreen() {
 
       const blob = await response.blob();
       
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        const base64 = base64data.split(',')[1];
-        
-        const fileUri = FileSystem.documentDirectory + filename;
-        await FileSystem.writeAsStringAsync(fileUri, base64, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri);
-        } else {
-          Alert.alert('Erfolg', 'Datei wurde exportiert');
-        }
-      };
-      reader.readAsDataURL(blob);
+      if (isWeb) {
+        // Web: Direct download
+        downloadFileWeb(blob, filename);
+        Alert.alert('Erfolg', `${filename} wurde heruntergeladen`);
+      } else {
+        // Native: Use FileSystem and Sharing
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64data = reader.result as string;
+            const base64 = base64data.split(',')[1];
+            
+            const fileUri = FileSystem.documentDirectory + filename;
+            await FileSystem.writeAsStringAsync(fileUri, base64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(fileUri, { mimeType });
+            } else {
+              Alert.alert('Erfolg', 'Datei wurde exportiert');
+            }
+          } catch (e) {
+            Alert.alert('Fehler', 'Datei konnte nicht gespeichert werden');
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
     } catch (error: any) {
+      console.error('Export error:', error);
       Alert.alert('Fehler', error.message || 'Export fehlgeschlagen');
     } finally {
       setExporting(null);
     }
+  };
+
+  const handleBackupExport = async () => {
+    setExporting('backup');
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/backup/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error('Backup-Export fehlgeschlagen');
+      }
+
+      const blob = await response.blob();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `vertragsmanager_backup_${timestamp}.json`;
+      
+      if (isWeb) {
+        downloadFileWeb(blob, filename);
+        Alert.alert('Erfolg', 'Backup wurde heruntergeladen');
+      } else {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64data = reader.result as string;
+            const base64 = base64data.split(',')[1];
+            
+            const fileUri = FileSystem.documentDirectory + filename;
+            await FileSystem.writeAsStringAsync(fileUri, base64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(fileUri, { mimeType: 'application/json' });
+            } else {
+              Alert.alert('Erfolg', 'Backup wurde erstellt');
+            }
+          } catch (e) {
+            Alert.alert('Fehler', 'Backup konnte nicht gespeichert werden');
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
+    } catch (error: any) {
+      console.error('Backup export error:', error);
+      Alert.alert('Fehler', error.message || 'Backup-Export fehlgeschlagen');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleBackupRestore = async () => {
+    setRestoreModalVisible(false);
+    
+    try {
+      if (isWeb) {
+        // Web: Use file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        
+        input.onchange = async (e: any) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          setRestoring(true);
+          try {
+            const text = await file.text();
+            const backupData = JSON.parse(text);
+            
+            const response = await fetch(`${BACKEND_URL}/api/backup/restore`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify(backupData),
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.detail || 'Wiederherstellung fehlgeschlagen');
+            }
+
+            const result = await response.json();
+            Alert.alert(
+              'Erfolg',
+              `Backup wiederhergestellt:\n${result.restored_family_members} Familienmitglieder\n${result.restored_contracts} Verträge`
+            );
+          } catch (error: any) {
+            Alert.alert('Fehler', error.message || 'Wiederherstellung fehlgeschlagen');
+          } finally {
+            setRestoring(false);
+          }
+        };
+        
+        input.click();
+      } else {
+        // Native: Use DocumentPicker
+        setRestoring(true);
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+          const file = result.assets[0];
+          const content = await FileSystem.readAsStringAsync(file.uri);
+          const backupData = JSON.parse(content);
+          
+          const response = await fetch(`${BACKEND_URL}/api/backup/restore`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(backupData),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Wiederherstellung fehlgeschlagen');
+          }
+
+          const restoreResult = await response.json();
+          Alert.alert(
+            'Erfolg',
+            `Backup wiederhergestellt:\n${restoreResult.restored_family_members} Familienmitglieder\n${restoreResult.restored_contracts} Verträge`
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error('Restore error:', error);
+      Alert.alert('Fehler', error.message || 'Wiederherstellung fehlgeschlagen');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const confirmRestore = () => {
+    setRestoreModalVisible(true);
   };
 
   const handleLogout = () => {
@@ -118,7 +291,7 @@ export default function SettingsScreen() {
               <TouchableOpacity
                 style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
                 onPress={() => handleExport('pdf')}
-                disabled={exporting !== null}
+                disabled={exporting !== null || restoring}
               >
                 <View style={[styles.menuIcon, styles.pdfIcon, isDesktop && styles.menuIconDesktop]}>
                   <Ionicons name="document" size={isDesktop ? 24 : 20} color="#fff" />
@@ -134,14 +307,14 @@ export default function SettingsScreen() {
                 {exporting === 'pdf' ? (
                   <ActivityIndicator size="small" color="#3b82f6" />
                 ) : (
-                  <Ionicons name="chevron-forward" size={20} color="#64748b" />
+                  <Ionicons name="download-outline" size={20} color="#64748b" />
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
                 onPress={() => handleExport('excel')}
-                disabled={exporting !== null}
+                disabled={exporting !== null || restoring}
               >
                 <View style={[styles.menuIcon, styles.excelIcon, isDesktop && styles.menuIconDesktop]}>
                   <Ionicons name="grid" size={isDesktop ? 24 : 20} color="#fff" />
@@ -157,10 +330,62 @@ export default function SettingsScreen() {
                 {exporting === 'excel' ? (
                   <ActivityIndicator size="small" color="#3b82f6" />
                 ) : (
-                  <Ionicons name="chevron-forward" size={20} color="#64748b" />
+                  <Ionicons name="download-outline" size={20} color="#64748b" />
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              Datensicherung
+            </Text>
+            
+            <TouchableOpacity
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+              onPress={handleBackupExport}
+              disabled={exporting !== null || restoring}
+            >
+              <View style={[styles.menuIcon, styles.backupIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="cloud-download" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                  Backup erstellen
+                </Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  Alle Daten als JSON exportieren
+                </Text>
+              </View>
+              {exporting === 'backup' ? (
+                <ActivityIndicator size="small" color="#3b82f6" />
+              ) : (
+                <Ionicons name="download-outline" size={20} color="#64748b" />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.menuItem, isDesktop && styles.menuItemDesktop]}
+              onPress={confirmRestore}
+              disabled={exporting !== null || restoring}
+            >
+              <View style={[styles.menuIcon, styles.restoreIcon, isDesktop && styles.menuIconDesktop]}>
+                <Ionicons name="cloud-upload" size={isDesktop ? 24 : 20} color="#fff" />
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={[styles.menuTitle, isDesktop && styles.menuTitleDesktop]}>
+                  Backup wiederherstellen
+                </Text>
+                <Text style={[styles.menuSubtitle, isDesktop && styles.menuSubtitleDesktop]}>
+                  Daten aus JSON-Backup laden
+                </Text>
+              </View>
+              {restoring ? (
+                <ActivityIndicator size="small" color="#3b82f6" />
+              ) : (
+                <Ionicons name="push-outline" size={20} color="#64748b" />
+              )}
+            </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
@@ -193,6 +418,42 @@ export default function SettingsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Restore Confirmation Modal */}
+      <Modal
+        visible={restoreModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRestoreModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isDesktop && styles.modalContentDesktop]}>
+            <View style={styles.modalIcon}>
+              <Ionicons name="warning" size={48} color="#f59e0b" />
+            </View>
+            <Text style={[styles.modalTitle, isDesktop && styles.modalTitleDesktop]}>
+              Backup wiederherstellen?
+            </Text>
+            <Text style={[styles.modalText, isDesktop && styles.modalTextDesktop]}>
+              Achtung: Alle aktuellen Daten (Verträge und Familienmitglieder) werden durch die Daten aus dem Backup ersetzt!
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setRestoreModalVisible(false)}
+              >
+                <Text style={styles.modalButtonCancelText}>Abbrechen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm]}
+                onPress={handleBackupRestore}
+              >
+                <Text style={styles.modalButtonConfirmText}>Wiederherstellen</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -320,6 +581,12 @@ const styles = StyleSheet.create({
   excelIcon: {
     backgroundColor: '#10b981',
   },
+  backupIcon: {
+    backgroundColor: '#3b82f6',
+  },
+  restoreIcon: {
+    backgroundColor: '#8b5cf6',
+  },
   logoutIcon: {
     backgroundColor: '#64748b',
   },
@@ -365,5 +632,75 @@ const styles = StyleSheet.create({
   },
   footerSubtextDesktop: {
     fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  modalContentDesktop: {
+    padding: 32,
+    maxWidth: 480,
+  },
+  modalIcon: {
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  modalTitleDesktop: {
+    fontSize: 24,
+  },
+  modalText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  modalTextDesktop: {
+    fontSize: 16,
+    lineHeight: 26,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#334155',
+  },
+  modalButtonConfirm: {
+    backgroundColor: '#3b82f6',
+  },
+  modalButtonCancelText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  modalButtonConfirmText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
 });

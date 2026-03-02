@@ -657,6 +657,93 @@ async def root():
 async def health():
     return {"status": "healthy"}
 
+# ==================== BACKUP ROUTES ====================
+
+class BackupData(BaseModel):
+    version: str = "1.0"
+    created_at: str
+    user: dict
+    family_members: List[dict]
+    contracts: List[dict]
+
+@api_router.get("/backup/export")
+async def export_backup(current_user: User = Depends(get_current_user)):
+    """Export all user data as JSON backup"""
+    # Get user data (without password)
+    user_data = await db.users.find_one({"id": current_user.id})
+    if user_data:
+        user_data.pop("_id", None)
+        user_data.pop("password_hash", None)
+    
+    # Get family members
+    family_members = await db.family_members.find({"user_id": current_user.id}).to_list(100)
+    for m in family_members:
+        m.pop("_id", None)
+    
+    # Get contracts
+    contracts = await db.contracts.find({"user_id": current_user.id}).to_list(1000)
+    for c in contracts:
+        c.pop("_id", None)
+    
+    backup = {
+        "version": "1.0",
+        "created_at": datetime.utcnow().isoformat(),
+        "user": user_data,
+        "family_members": family_members,
+        "contracts": contracts
+    }
+    
+    import json
+    backup_json = json.dumps(backup, indent=2, default=str, ensure_ascii=False)
+    
+    return StreamingResponse(
+        io.BytesIO(backup_json.encode('utf-8')),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=vertragsmanager_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        }
+    )
+
+@api_router.post("/backup/restore")
+async def restore_backup(
+    backup_data: BackupData,
+    current_user: User = Depends(get_current_user)
+):
+    """Restore user data from JSON backup"""
+    try:
+        # Delete existing data for user
+        await db.family_members.delete_many({"user_id": current_user.id})
+        await db.contracts.delete_many({"user_id": current_user.id})
+        
+        restored_family = 0
+        restored_contracts = 0
+        
+        # Restore family members with new user_id
+        for member in backup_data.family_members:
+            member["user_id"] = current_user.id
+            member["_id"] = None  # Let MongoDB generate new _id
+            if "_id" in member:
+                del member["_id"]
+            await db.family_members.insert_one(member)
+            restored_family += 1
+        
+        # Restore contracts with new user_id
+        for contract in backup_data.contracts:
+            contract["user_id"] = current_user.id
+            if "_id" in contract:
+                del contract["_id"]
+            await db.contracts.insert_one(contract)
+            restored_contracts += 1
+        
+        return {
+            "message": "Backup erfolgreich wiederhergestellt",
+            "restored_family_members": restored_family,
+            "restored_contracts": restored_contracts
+        }
+    except Exception as e:
+        logger.error(f"Backup restore failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Wiederherstellung fehlgeschlagen: {str(e)}")
+
 # Include the router in the main app
 app.include_router(api_router)
 
