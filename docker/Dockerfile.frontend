@@ -1,17 +1,18 @@
 # Frontend Dockerfile für Vertragsmanager (Web Export)
-# Für Synology NAS mit Portainer
+# Für Synology NAS - verwendet npm statt yarn
 
 FROM node:20-alpine AS builder
 
 WORKDIR /build
 
-# Install dependencies first (für besseres Caching)
+# Copy package files
 COPY frontend/package.json ./
-# yarn.lock ist optional
-COPY frontend/yarn.lock* ./
-RUN yarn install || yarn install --no-lockfile
+COPY frontend/package-lock.json* ./
 
-# Copy source code
+# Install dependencies with npm
+RUN npm install --legacy-peer-deps
+
+# Copy all frontend source code
 COPY frontend/ .
 
 # Build web export (relative URLs für API)
