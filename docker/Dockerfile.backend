@@ -1,10 +1,11 @@
 # Backend Dockerfile für Vertragsmanager
-# Optimiert für Synology NAS (ARM64 & x86)
+# Für Portainer Git-Deployment auf Synology
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies für ARM & x86 Kompatibilität
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
@@ -17,12 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY backend/server.py .
 
-# Environment variables (können überschrieben werden)
+# Environment variables
 ENV MONGO_URL="mongodb://mongo:27017"
 ENV DB_NAME="vertragsmanager"
 ENV JWT_SECRET="change-this-secret-in-production"
 
 EXPOSE 8001
 
-# Start server
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
