@@ -1,15 +1,17 @@
 # Backend Dockerfile für Vertragsmanager
+# Optimiert für Synology NAS (ARM64 & x86)
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies
+# System dependencies für ARM & x86 Kompatibilität
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
-COPY backend/requirements.txt .
+# Python dependencies - minimale Version
+COPY docker/requirements.docker.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code
@@ -19,12 +21,6 @@ COPY backend/server.py .
 ENV MONGO_URL="mongodb://mongo:27017"
 ENV DB_NAME="vertragsmanager"
 ENV JWT_SECRET="change-this-secret-in-production"
-ENV SMTP_HOST="smtp.gmail.com"
-ENV SMTP_PORT=587
-ENV SMTP_USER=""
-ENV SMTP_PASSWORD=""
-ENV SMTP_FROM_EMAIL=""
-ENV SMTP_FROM_NAME="Vertragsmanager"
 
 EXPOSE 8001
 
