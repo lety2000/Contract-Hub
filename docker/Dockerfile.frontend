@@ -1,7 +1,3 @@
-
-Ersetzen Sie auf Ihrer Synology:
-Datei: /volume1/docker/vertragsmanager/docker/Dockerfile.frontend
-
 # Frontend Dockerfile für Vertragsmanager (Web Export)
 # Für Synology NAS - verwendet npm statt yarn
 
