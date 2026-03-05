@@ -1,5 +1,5 @@
 # Frontend Dockerfile für Vertragsmanager
-# Für Portainer Git-Deployment auf Synology
+# Optimiert für Synology DS220+
 
 FROM node:20-alpine AS builder
 
@@ -9,24 +9,30 @@ WORKDIR /build
 COPY frontend/package.json ./
 COPY frontend/package-lock.json* ./
 
-# Install dependencies
-RUN npm install --legacy-peer-deps
+# Install dependencies (ignoriere peer dependency Warnungen)
+RUN npm install --legacy-peer-deps --loglevel=error
 
-# Copy frontend source
+# Copy all frontend source
 COPY frontend/ .
 
-# Build web export (leere URL = relative Pfade für API)
+# WICHTIG: Leere URL bedeutet relative Pfade (für nginx proxy)
 ENV EXPO_PUBLIC_BACKEND_URL=""
+
+# Build für Web
 RUN npx expo export --platform web
 
-# Production image
+# ---- Production Image ----
 FROM nginx:alpine
 
-# Copy built files
+# Copy built app
 COPY --from=builder /build/dist /usr/share/nginx/html
 
-# Nginx config
+# Copy nginx config
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD wget -q --spider http://localhost:80/ || exit 1
 
 EXPOSE 80
 

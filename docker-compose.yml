@@ -1,8 +1,8 @@
 # ============================================
 # VERTRAGSMANAGER - PORTAINER GIT STACK
 # ============================================
-# Für Portainer Git-Deployment auf Synology
-# Pfade sind relativ zum Repository-Root
+# Für Synology DS220+ mit Portainer
+# Compose path: docker-compose.yml
 # ============================================
 
 version: '3.8'
@@ -17,6 +17,8 @@ services:
       - mongo_data:/data/db
     networks:
       - vertragsmanager-net
+    # Warte 10 Sekunden bevor Backend startet
+    command: mongod --bind_ip_all
 
   # Backend API (Python/FastAPI)
   backend:
@@ -28,11 +30,14 @@ services:
     environment:
       - MONGO_URL=mongodb://mongo:27017
       - DB_NAME=vertragsmanager
-      - JWT_SECRET=${JWT_SECRET:-bitte-aendern-32-zeichen-minimum}
+      - JWT_SECRET=${JWT_SECRET:-mein-super-geheimes-jwt-secret-32-zeichen}
     depends_on:
       - mongo
     networks:
       - vertragsmanager-net
+    # Warte auf MongoDB
+    command: >
+      sh -c "sleep 5 && uvicorn server:app --host 0.0.0.0 --port 8001"
 
   # Frontend (Nginx + Web App)
   frontend:
