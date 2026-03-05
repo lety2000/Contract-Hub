@@ -1,0 +1,35 @@
+# Docker ignore file
+# Verhindert, dass lokale Entwicklungsdateien in den Build gelangen
+
+# Node modules
+**/node_modules
+
+# Environment files (enthalten lokale URLs)
+**/.env
+**/.env.local
+**/.env.development
+
+# Expo cache
+**/.expo
+**/.metro-cache
+
+# Git
+.git
+.gitignore
+
+# Test files
+**/__pycache__
+**/test_*
+**/tests
+*.pyc
+
+# IDE
+.vscode
+.idea
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
