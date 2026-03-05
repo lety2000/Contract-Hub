@@ -21,7 +21,7 @@ services:
   # Backend API (Python/FastAPI)
   backend:
     build:
-      context: /volume1/docker/vertragsmanager
+      context: ..
       dockerfile: docker/Dockerfile.backend
     container_name: vertragsmanager-backend
     restart: unless-stopped
@@ -37,7 +37,7 @@ services:
   # Frontend (Nginx + Web App)
   frontend:
     build:
-      context: /volume1/docker/vertragsmanager
+      context: ..
       dockerfile: docker/Dockerfile.frontend
     container_name: vertragsmanager-frontend
     restart: unless-stopped
