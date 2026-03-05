@@ -15,6 +15,7 @@ services:
     image: mongo:4.4
     container_name: vertragsmanager-db
     restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
     volumes:
       - mongo_data:/data/db
     networks:
