@@ -1,5 +1,5 @@
-# Frontend Dockerfile für Vertragsmanager
-# Optimiert für Synology DS220+
+# Frontend Dockerfile für Vertragsmanager (Web Export)
+# Für Synology NAS - verwendet npm statt yarn
 
 FROM node:20-alpine AS builder
 
@@ -9,30 +9,20 @@ WORKDIR /build
 COPY frontend/package.json ./
 COPY frontend/package-lock.json* ./
 
-# Install dependencies
-RUN npm install --legacy-peer-deps --loglevel=error
+# Install dependencies with npm
+RUN npm install --legacy-peer-deps
 
-# Copy frontend source (OHNE die .env Datei)
-COPY frontend/app ./app
-COPY frontend/src ./src
-COPY frontend/assets ./assets
-COPY frontend/app.json ./
-COPY frontend/tsconfig.json ./
-COPY frontend/metro.config.js* ./
-COPY frontend/babel.config.js* ./
+# Copy all frontend source code
+COPY frontend/ .
 
-# WICHTIG: Erstelle eine leere .env Datei für Docker
-# Dies überschreibt jede vorhandene .env mit der Preview-URL
-RUN echo "EXPO_PUBLIC_BACKEND_URL=" > .env
-
-# Build für Web mit leerer Backend-URL (= relative Pfade)
+# Build web export (relative URLs für API)
 ENV EXPO_PUBLIC_BACKEND_URL=""
 RUN npx expo export --platform web
 
 # ---- Production Image ----
 FROM nginx:alpine
 
-# Copy built app
+# Copy built files
 COPY --from=builder /build/dist /usr/share/nginx/html
 
 # Copy nginx config
