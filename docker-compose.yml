@@ -1,20 +1,16 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # MongoDB Datenbank (4.4 für CPUs ohne AVX wie DS220+)
+
   mongo:
     image: mongo:4.4
     container_name: vertragsmanager-db
     restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
     volumes:
       - mongo_data:/data/db
     networks:
       - vertragsmanager-net
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   backend:
     build:
@@ -23,12 +19,11 @@ services:
     container_name: vertragsmanager-backend
     restart: unless-stopped
     environment:
-      - MONGO_URL=mongodb://mongo:27017
-      - DB_NAME=vertragsmanager
-      - JWT_SECRET=${JWT_SECRET}
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: vertragsmanager
+      JWT_SECRET: ${JWT_SECRET}
     depends_on:
-      mongo:
-        condition: service_healthy
+      - mongo
     networks:
       - vertragsmanager-net
 
@@ -45,8 +40,11 @@ services:
     networks:
       - vertragsmanager-net
 
+
 volumes:
   mongo_data:
 
+
 networks:
   vertragsmanager-net:
+    driver: bridge
