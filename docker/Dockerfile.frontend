@@ -9,16 +9,24 @@ WORKDIR /build
 COPY frontend/package.json ./
 COPY frontend/package-lock.json* ./
 
-# Install dependencies (ignoriere peer dependency Warnungen)
+# Install dependencies
 RUN npm install --legacy-peer-deps --loglevel=error
 
-# Copy all frontend source
-COPY frontend/ .
+# Copy frontend source (OHNE die .env Datei)
+COPY frontend/app ./app
+COPY frontend/src ./src
+COPY frontend/assets ./assets
+COPY frontend/app.json ./
+COPY frontend/tsconfig.json ./
+COPY frontend/metro.config.js* ./
+COPY frontend/babel.config.js* ./
 
-# WICHTIG: Leere URL bedeutet relative Pfade (für nginx proxy)
+# WICHTIG: Erstelle eine leere .env Datei für Docker
+# Dies überschreibt jede vorhandene .env mit der Preview-URL
+RUN echo "EXPO_PUBLIC_BACKEND_URL=" > .env
+
+# Build für Web mit leerer Backend-URL (= relative Pfade)
 ENV EXPO_PUBLIC_BACKEND_URL=""
-
-# Build für Web
 RUN npx expo export --platform web
 
 # ---- Production Image ----
