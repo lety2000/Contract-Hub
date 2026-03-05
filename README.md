@@ -40,14 +40,14 @@ Der erste Build dauert **5-10 Minuten**. Warten Sie, bis alle 3 Container grün 
 ## 🌐 Zugriff
 
 - **Direkt:** `http://SYNOLOGY-IP:8080`
-- **Mit Reverse Proxy:** `https://vertraege.letang2000.synology.me`
+- **Mit Reverse Proxy:** `https://vertraege.xxx.synology.me`
 
 ### Reverse Proxy einrichten
 
 1. **Systemsteuerung** → **Anmeldungsportal** → **Erweitert** → **Reverse Proxy**
 2. **Erstellen:**
    - Beschreibung: `Vertragsmanager`
-   - Quelle: HTTPS, `vertraege.letang2000.synology.me`, Port 443
+   - Quelle: HTTPS, `vertraege.xxx.synology.me`, Port 443
    - Ziel: HTTP, `localhost`, Port 8080
 3. **Benutzerdefinierte Kopfzeile** → **Erstellen** → **WebSocket**
 4. **Speichern**
