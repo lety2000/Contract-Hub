@@ -8,13 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY docker/requirements.docker.txt requirements.txt
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/server.py .
-
-ENV MONGO_URL="mongodb://mongo:27017"
-ENV DB_NAME="vertragsmanager"
-ENV JWT_SECRET="change-this-secret-in-production"
 
 EXPOSE 8001
 
