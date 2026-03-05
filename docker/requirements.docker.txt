@@ -1,19 +1,20 @@
-# Backend Requirements für Vertragsmanager
 fastapi==0.110.1
 uvicorn==0.25.0
 python-multipart==0.0.22
-starlette==0.37.2
 
-# Database (kompatibel mit MongoDB 4.4)
 motor==3.3.1
 pymongo==4.5.0
-python-jose[cryptography]==3.5.0
+
+PyJWT==2.8.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.3
+
 pydantic==2.12.5
 email-validator==2.3.0
+
 reportlab==4.4.10
 openpyxl==3.1.5
+
 APScheduler==3.11.2
 python-dotenv==1.2.1
 python-dateutil==2.9.0.post0
